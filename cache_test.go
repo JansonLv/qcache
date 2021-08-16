@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -125,11 +126,180 @@ func Test_cacheRepository_GetOrSetDataWithExpireOption(t *testing.T) {
 	}()
 }
 
-func BenchmarkName1(b *testing.B) {
+func Test_cacheRepository_GetOrSetDataWithFunc(t *testing.T) {
+	repo := NewCacheRepository()
+	id := 0
+	key := fmt.Sprintf(userKey, id)
+	ioInfo := getInfoByIO(id, "jansonlv")
+
+	func() {
+		// 先获取缓存，缓存不存在，设置缓存
+		info := &UserInfo{}
+		err := repo.GetWithMarshal(
+			key,
+			info,
+			func() (interface{}, error) {
+				return getInfoByIO(id, "jansonlv"), nil
+			},
+		)
+		assert.NoError(t, err)
+		assert.Equal(t, info, ioInfo)
+	}()
+	func() {
+		info := &UserInfo{}
+		err := repo.GetWithMarshal(
+			key,
+			info,
+			func() (interface{}, error) {
+				return getInfoByIO(id, "jansonlv1"), nil
+			},
+		)
+		assert.NoError(t, err)
+		assert.Equal(t, info, ioInfo)
+	}()
+	func() {
+		id := 1
+		var err1 = errors.New("aa")
+		info := &UserInfo{}
+		key := fmt.Sprintf(userKey, id)
+		err := repo.GetWithMarshal(
+			key,
+			info,
+			func() (interface{}, error) {
+				return getInfoByIO(id, "jansonlv111"), err1
+			},
+		)
+		assert.Equal(t, err, err1)
+		assert.Equal(t, info, &UserInfo{})
+	}()
+	func() {
+		time.Sleep(time.Second * 3)
+		info := &UserInfo{}
+		err := repo.GetWithMarshal(
+			key,
+			info,
+			func() (interface{}, error) {
+				return getInfoByIO(id, "jansonlv2"), nil
+			},
+		)
+		assert.NoError(t, err)
+		assert.NotEqual(t, info, ioInfo)
+		assert.Equal(t, info, getInfoByIO(id, "jansonlv2"))
+	}()
+	//func() {
+	//	info := &UserInfo{}
+	//	time.Sleep(time.Second * 2)
+	//	// 再2秒钟后重新获取缓存，此时缓存失效
+	//	_, err := repo.GetOrSetDataFunc(key, info)
+	//	assert.Equal(t, err, freecache.ErrNotFound)
+	//}()
+}
+
+func Test_cacheRepository_GetOrSetDataWithFunc1(t *testing.T) {
+	repo := NewCacheRepository()
+	id := 0
+	key := fmt.Sprintf(userKey, id)
+	ioInfo := getInfoByIO(id, "jansonlv")
+
+	func() {
+		// 先获取缓存，缓存不存在，设置缓存
+		info := &UserInfo{}
+		err := repo.GetWithCopier(
+			key,
+			info,
+			func() (interface{}, error) {
+				return getInfoByIO(id, "jansonlv"), nil
+			},
+		)
+		assert.NoError(t, err)
+		assert.Equal(t, info, ioInfo)
+	}()
+	func() {
+		info := &UserInfo{}
+		err := repo.GetWithCopier(
+			key,
+			info,
+			func() (interface{}, error) {
+				return getInfoByIO(id, "jansonlv1"), nil
+			},
+		)
+		assert.NoError(t, err)
+		assert.Equal(t, info, ioInfo)
+	}()
+	func() {
+		id := 1
+		var err1 = errors.New("aa")
+		info := &UserInfo{}
+		key := fmt.Sprintf(userKey, id)
+		err := repo.GetWithCopier(
+			key,
+			info,
+			func() (interface{}, error) {
+				return getInfoByIO(id, "jansonlv111"), err1
+			},
+		)
+		assert.Equal(t, err, err1)
+		assert.Equal(t, info, &UserInfo{})
+	}()
+	func() {
+		id := 10
+		info := &UserInfo{}
+		key := fmt.Sprintf(userKey, id)
+		err := repo.GetWithCopier(
+			key,
+			info,
+			func() (interface{}, error) {
+				return getInfoByIO(id, "jansonlv10-1"), nil
+			},
+			WithConditionOption(id <= 5),
+		)
+		assert.NoError(t, err)
+		assert.Equal(t, info, getInfoByIO(id, "jansonlv10-1"))
+	}()
+	func() {
+		// 该id和上面的id一样，缓存key是一样的，但是不会缓存，因此，都会使用同一个key处理
+		id := 10
+		info := &UserInfo{}
+		key := fmt.Sprintf(userKey, id)
+		err := repo.GetWithCopier(
+			key,
+			info,
+			func() (interface{}, error) {
+				return getInfoByIO(id, "jansonlv10-2"), nil
+			},
+			WithConditionOption(id <= 5),
+		)
+		assert.NoError(t, err)
+		assert.Equal(t, info, getInfoByIO(id, "jansonlv10-2"))
+	}()
+	func() {
+		time.Sleep(time.Second * 3)
+		info := &UserInfo{}
+		err := repo.GetWithCopier(
+			key,
+			info,
+			func() (interface{}, error) {
+				return getInfoByIO(id, "jansonlv2"), nil
+			},
+		)
+		assert.NoError(t, err)
+		assert.NotEqual(t, info, ioInfo)
+		assert.Equal(t, info, getInfoByIO(id, "jansonlv2"))
+	}()
+	//func() {
+	//	info := &UserInfo{}
+	//	time.Sleep(time.Second * 2)
+	//	// 再2秒钟后重新获取缓存，此时缓存失效
+	//	_, err := repo.GetOrSetDataFunc(key, info)
+	//	assert.Equal(t, err, freecache.ErrNotFound)
+	//}()
+}
+
+func BenchmarkGetSet(b *testing.B) {
 	repo1 := NewCacheRepository()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		id := i % 100
+		id := i % 10
 		ioInfo := &UserInfo{}
 		key := fmt.Sprintf("name1:%d", id)
 		if err := repo1.GetData(key, ioInfo); err == nil {
@@ -140,12 +310,12 @@ func BenchmarkName1(b *testing.B) {
 	}
 }
 
-func BenchmarkName2(b *testing.B) {
+func BenchmarkGetOrSetFunc(b *testing.B) {
 	repo2 := NewCacheRepository()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		func() {
-			id := i % 100
+			id := i % 10
 			ioInfo := &UserInfo{}
 			key := fmt.Sprintf("name2:%d", id)
 			setFunc, err := repo2.GetOrSetDataFunc(key, ioInfo)
@@ -157,6 +327,32 @@ func BenchmarkName2(b *testing.B) {
 			}()
 			ioInfo = getInfoByIO(id, "jansonlv")
 		}()
+	}
+}
+
+func BenchmarkGetWithMarshal(b *testing.B) {
+	repo2 := NewCacheRepository()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		id := i % 10
+		ioInfo := &UserInfo{}
+		key := fmt.Sprintf("name2:%d", id)
+		_ = repo2.GetWithMarshal(key, ioInfo, func() (interface{}, error) {
+			return getInfoByIO(id, "jansonlv"), nil
+		})
+	}
+}
+
+func BenchmarkGetWithCopier(b *testing.B) {
+	repo2 := NewCacheRepository()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		id := i % 10
+		ioInfo := &UserInfo{}
+		key := fmt.Sprintf("name2:%d", id)
+		_ = repo2.GetWithCopier(key, ioInfo, func() (interface{}, error) {
+			return getInfoByIO(id, "jansonlv"), nil
+		})
 	}
 }
 

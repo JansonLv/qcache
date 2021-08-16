@@ -3,6 +3,7 @@ package cache
 import (
 	"encoding/json"
 	"errors"
+	"github.com/jinzhu/copier"
 	"time"
 
 	"github.com/coocood/freecache"
@@ -17,6 +18,8 @@ type CacheRepository interface {
 	GetOrSetDataWithCondition(key string, value interface{}, isSave bool) (func(key string, value interface{}, expire int) error, error)
 	GetOrSetDataOptions(key string, value interface{}, opts ...configOption) (func(key string, value interface{}, expire int) error, error)
 	GetOrSetDataFunc(key string, value interface{}, opts ...configOption) (func(value interface{}) error, error)
+	GetWithMarshal(key string, value interface{}, getData func() (interface{}, error), opts ...configOption) error
+	GetWithCopier(key string, value interface{}, getData func() (interface{}, error), opts ...configOption) error
 }
 
 type cacheRepository struct {
@@ -166,4 +169,57 @@ func (repo *cacheRepository) GetOrSetDataFunc(key string, value interface{}, opt
 		return setFunc, err
 	}
 	return setFunc, nil
+}
+
+func (repo *cacheRepository) GetWithMarshal(key string, value interface{}, getDataFunc func() (interface{}, error), opts ...configOption) error {
+	config := newDefaultCacheConfig()
+	for _, opt := range opts {
+		opt(config)
+	}
+	getData := func() ([]byte, error) {
+		data, err := getDataFunc()
+		if err != nil {
+			return nil, err
+		}
+		bytes, err := json.Marshal(data)
+		if err != nil {
+			return nil, err
+		}
+		return bytes, json.Unmarshal(bytes, &value)
+	}
+
+	if !config.isSave {
+		_, err := getData()
+		return err
+	}
+
+	keyBys := []byte(key)
+
+	data, err := repo.client.Get(keyBys)
+	if err == nil {
+		return json.Unmarshal(data, &value)
+	}
+
+	v, err := getData()
+	if err != nil {
+		return err
+	}
+
+	return repo.client.Set(keyBys, v, int(config.expire/time.Second))
+}
+
+func (repo *cacheRepository) GetWithCopier(key string, value interface{}, getDataFunc func() (interface{}, error), opts ...configOption) error {
+	setFunc, err := repo.GetOrSetDataFunc(key, value, opts...)
+	if err == nil {
+		return nil
+	}
+	data, err := getDataFunc()
+	if err != nil {
+		return err
+	}
+	err = copier.Copy(value, data)
+	if err != nil {
+		return err
+	}
+	return setFunc(value)
 }
