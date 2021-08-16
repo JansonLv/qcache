@@ -124,3 +124,63 @@ func Test_cacheRepository_GetOrSetDataWithExpireOption(t *testing.T) {
 		assert.Equal(t, err, freecache.ErrNotFound)
 	}()
 }
+
+func BenchmarkName1(b *testing.B) {
+	repo1 := NewCacheRepository()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		id := i % 100
+		ioInfo := &UserInfo{}
+		key := fmt.Sprintf("name1:%d", id)
+		if err := repo1.GetData(key, ioInfo); err == nil {
+			continue
+		}
+		ioInfo = getInfoByIO(id, "jansonlv")
+		_ = repo1.SetData(key, ioInfo)
+	}
+}
+
+func BenchmarkName2(b *testing.B) {
+	repo2 := NewCacheRepository()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		func() {
+			id := i % 100
+			ioInfo := &UserInfo{}
+			key := fmt.Sprintf("name2:%d", id)
+			setFunc, err := repo2.GetOrSetDataFunc(key, ioInfo)
+			if err == nil {
+				return
+			}
+			defer func() {
+				_ = setFunc(ioInfo)
+			}()
+			ioInfo = getInfoByIO(id, "jansonlv")
+		}()
+	}
+}
+
+/*
+读写比例： 10：1
+goos: darwin
+goarch: amd64
+pkg: github.com/JansonLv/go-cache
+cpu: Intel(R) Core(TM) i7-1068NG7 CPU @ 2.30GHz
+BenchmarkName1-8          993747              1203 ns/op             304 B/op          9 allocs/op
+BenchmarkName2-8          916068              1302 ns/op             376 B/op         12 allocs/op
+PASS
+ok      github.com/JansonLv/go-cache    11.609s
+
+*/
+
+/*
+读写比例：100：1
+goos: darwin
+goarch: amd64
+pkg: github.com/JansonLv/go-cache
+cpu: Intel(R) Core(TM) i7-1068NG7 CPU @ 2.30GHz
+BenchmarkName1-8          965590              1229 ns/op             311 B/op          9 allocs/op
+BenchmarkName2-8          895328              1339 ns/op             383 B/op         12 allocs/op
+PASS
+ok      github.com/JansonLv/go-cache    12.240s
+*/
