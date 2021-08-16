@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/jinzhu/copier"
+	"reflect"
 	"time"
 
 	"github.com/coocood/freecache"
@@ -216,6 +217,10 @@ func (repo *cacheRepository) GetWithCopier(key string, value interface{}, getDat
 	data, err := getDataFunc()
 	if err != nil {
 		return err
+	}
+	// 类型判断
+	if reflect.TypeOf(data) != reflect.TypeOf(value) {
+		return errors.New("getDataFunc is not expected")
 	}
 	err = copier.Copy(value, data)
 	if err != nil {
