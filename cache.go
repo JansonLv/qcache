@@ -1,227 +1,39 @@
 package cache
 
 import (
-	"encoding/json"
 	"errors"
+	"github.com/JansonLv/go-cache/store"
 	"github.com/jinzhu/copier"
 	"reflect"
-	"time"
-
-	"github.com/coocood/freecache"
 )
 
-var ConditionErr = errors.New("condition are not met")
-
-type CacheRepository interface {
-	SetData(key string, value interface{}) error
-	GetData(key string, info interface{}) error
-	GetOrSetData(key string, value interface{}) (func(key string, value interface{}, expire int) error, error)
-	GetOrSetDataWithCondition(key string, value interface{}, isSave bool) (func(key string, value interface{}, expire int) error, error)
-	GetOrSetDataOptions(key string, value interface{}, opts ...configOption) (func(key string, value interface{}, expire int) error, error)
-	GetOrSetDataFunc(key string, value interface{}, opts ...configOption) (func(value interface{}) error, error)
-	GetWithMarshal(key string, value interface{}, getData func() (interface{}, error), opts ...configOption) error
-	GetWithCopier(key string, value interface{}, getData func() (interface{}, error), opts ...configOption) error
-	GetCache(key string) *session
+type QCache interface {
+	GetKey(key string) *session
+	GetCacheWithOptions(key string, value interface{}, getDataFunc func() (interface{}, error), opts ...ConfigOption) error
 }
 
 type cacheRepository struct {
-	client *freecache.Cache
+	cache store.CacheRepository
 }
 
-func NewCacheRepository() CacheRepository {
-	client := freecache.NewCache(1024 * 1024)
-	return &cacheRepository{client: client}
+func NewCacheRepository(cache store.CacheRepository) QCache {
+	return &cacheRepository{cache: cache}
 }
 
-func (repo *cacheRepository) getClient() *freecache.Cache {
-	return repo.client
-}
-
-func (repo *cacheRepository) SetData(key string, value interface{}) error {
-	v, err := json.Marshal(value)
-	if err != nil {
-		return err
+func (repo *cacheRepository) GetCacheWithOptions(key string, value interface{}, getDataFunc func() (interface{}, error), opts ...ConfigOption) error {
+	if key == ""{
+		return errors.New("key is empty")
 	}
-	return repo.client.Set([]byte(key), v, 10)
-}
-
-func (repo *cacheRepository) GetData(key string, info interface{}) error {
-	data, err := repo.client.Get([]byte(key))
-	if err != nil {
-		return err
-	}
-	err = json.Unmarshal(data, &info)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func (repo *cacheRepository) GetOrSetData(key string, value interface{}) (func(key string, value interface{}, expire int) error, error) {
-	setFunc := func(key string, value interface{}, expire int) error {
-		v, err := json.Marshal(value)
-		if err != nil {
-			return err
-		}
-		return repo.client.Set([]byte(key), v, expire)
-	}
-	data, err := repo.client.Get([]byte(key))
-	if err != nil {
-		return setFunc, err
-	}
-	err = json.Unmarshal(data, &value)
-	if err != nil {
-		return setFunc, err
-	}
-	return setFunc, nil
-}
-
-func (repo *cacheRepository) GetOrSetDataWithCondition(key string, value interface{}, isSave bool) (func(key string, value interface{}, expire int) error, error) {
-	if !isSave {
-		return func(key string, value interface{}, expire int) error { return nil }, errors.New("conditions are not met")
-	}
-	setFunc := func(key string, value interface{}, expire int) error {
-		v, err := json.Marshal(value)
-		if err != nil {
-			return err
-		}
-		return repo.client.Set([]byte(key), v, expire)
-	}
-	data, err := repo.client.Get([]byte(key))
-	if err != nil {
-		return setFunc, err
-	}
-	err = json.Unmarshal(data, &value)
-	if err != nil {
-		return setFunc, err
-	}
-	return setFunc, nil
-}
-
-// options模式
-
-type cacheConfig struct {
-	isSave bool
-	expire time.Duration
-}
-
-type configOption func(config *cacheConfig)
-
-func WithConditionOption(isSave bool) func(config *cacheConfig) {
-	return func(config *cacheConfig) {
-		config.isSave = isSave
-	}
-}
-
-func WithExpireOption(expire time.Duration) func(config *cacheConfig) {
-	return func(config *cacheConfig) {
-		config.expire = expire
-	}
-}
-
-func (repo *cacheRepository) GetOrSetDataOptions(key string, value interface{}, opts ...configOption) (func(key string, value interface{}, expire int) error, error) {
-	config := &cacheConfig{isSave: true}
+	config := NewDefaultCacheConfig()
 	for _, opt := range opts {
 		opt(config)
 	}
-	if !config.isSave {
-		return func(key string, value interface{}, expire int) error { return nil }, errors.New("conditions are not met")
-	}
-	setFunc := func(key string, value interface{}, expire int) error {
-		v, err := json.Marshal(value)
-		if err != nil {
-			return err
-		}
-		return repo.client.Set([]byte(key), v, expire)
-	}
-	data, err := repo.client.Get([]byte(key))
-	if err != nil {
-		return setFunc, err
-	}
-	err = json.Unmarshal(data, &value)
-	if err != nil {
-		return setFunc, err
-	}
-	return setFunc, nil
-}
 
-// newDefaultCacheConfig 默认cacheConfig
-func newDefaultCacheConfig() *cacheConfig {
-	return &cacheConfig{isSave: true, expire: 3 * time.Second}
-}
-
-func (repo *cacheRepository) GetOrSetDataFunc(key string, value interface{}, opts ...configOption) (func(value interface{}) error, error) {
-	config := newDefaultCacheConfig()
-	for _, opt := range opts {
-		opt(config)
-	}
-	if !config.isSave {
-		return func(value interface{}) error { return nil }, ConditionErr
-	}
-	keyBys := []byte(key)
-
-	setFunc := func(value interface{}) error {
-		v, err := json.Marshal(value)
-		if err != nil {
-			return err
-		}
-		// 闭包使用key和expire
-		return repo.client.Set(keyBys, v, int(config.expire/time.Second))
-	}
-	data, err := repo.client.Get(keyBys)
-	if err != nil {
-		return setFunc, err
-	}
-	err = json.Unmarshal(data, &value)
-	if err != nil {
-		return setFunc, err
-	}
-	return setFunc, nil
-}
-
-func (repo *cacheRepository) GetWithMarshal(key string, value interface{}, getDataFunc func() (interface{}, error), opts ...configOption) error {
-	config := newDefaultCacheConfig()
-	for _, opt := range opts {
-		opt(config)
-	}
-	getData := func() ([]byte, error) {
-		data, err := getDataFunc()
-		if err != nil {
-			return nil, err
-		}
-		bytes, err := json.Marshal(data)
-		if err != nil {
-			return nil, err
-		}
-		return bytes, json.Unmarshal(bytes, &value)
-	}
-
-	if !config.isSave {
-		_, err := getData()
-		return err
-	}
-
-	keyBys := []byte(key)
-
-	data, err := repo.client.Get(keyBys)
-	if err == nil {
-		return json.Unmarshal(data, &value)
-	}
-
-	v, err := getData()
-	if err != nil {
-		return err
-	}
-
-	return repo.client.Set(keyBys, v, int(config.expire/time.Second))
-}
-
-func (repo *cacheRepository) GetWithCopier(key string, value interface{}, getDataFunc func() (interface{}, error), opts ...configOption) error {
-	setFunc, err := repo.GetOrSetDataFunc(key, value, opts...)
+	setFunc, err := repo.getOrSetDataFunc(key, value, config)
 	if err == nil {
 		return nil
 	}
-	if getDataFunc == nil{
+	if getDataFunc == nil {
 		return err
 	}
 	data, err := getDataFunc()
@@ -230,7 +42,7 @@ func (repo *cacheRepository) GetWithCopier(key string, value interface{}, getDat
 	}
 	// 类型判断
 	if reflect.TypeOf(data) != reflect.TypeOf(value) {
-		return errors.New("getDataFunc is not expected")
+		return errors.New("get data is not expected as value")
 	}
 	err = copier.Copy(value, data)
 	if err != nil {
@@ -239,65 +51,21 @@ func (repo *cacheRepository) GetWithCopier(key string, value interface{}, getDat
 	return setFunc(value)
 }
 
-// builder模式
-type session struct {
-	client CacheRepository
-	key string
-	isSave bool
-	expire time.Duration
-	getDataFunc func()(interface{}, error)
-}
-
-func newSession(client CacheRepository, key string) *session {
-	return &session{
-		client: client,
-		key:    key,
-		isSave: true,
-		expire: time.Second*3,
-		getDataFunc: nil,
-	}
-}
-
-func (s *session) SetIsSave(value bool) *session {
-	s.isSave = value
-	return s
-}
-
-
-func (s *session) SetExpire(expire time.Duration) *session {
-	s.expire = expire
-	return s
-}
-
-
-func (s *session) SetGetDataFunc(fn func()(interface{}, error)) *session {
-	s.getDataFunc = fn
-	return s
-}
-
-
-func (s *session) Find(value interface{}) error {
-	setDataFunc, err := s.client.GetOrSetDataFunc(s.key, value, WithConditionOption(s.isSave), WithExpireOption(s.expire))
-	if err == nil{
-		return nil
-	}
-	if s.getDataFunc == nil{
-		return err
-	}
-	data, err := s.getDataFunc()
-	if err != nil {
-		return err
-	}
-	if reflect.TypeOf(data) != reflect.TypeOf(value) {
-		return errors.New("getDataFunc is not expected")
-	}
-	if err = copier.Copy(value, data); err != nil{
-		return err
-	}
-	return setDataFunc(data)
-}
-
-
-func (repo *cacheRepository) GetCache(key string) *session {
+func (repo *cacheRepository) GetKey(key string) *session {
 	return newSession(repo, key)
+}
+
+func (repo *cacheRepository)getOrSetDataFunc(key string, value interface{}, config *cacheConfig) (func(value interface{}) error, error) {
+	if !config.isSave {
+		return func(value interface{}) error { return nil }, ConditionErr
+	}
+	err := repo.cache.Get(key, value)
+	if err == nil {
+		// 获取到数据返回
+		return func(value interface{}) error {return nil}, nil
+	}
+	// 获取数据失败
+	return func(value interface{}) error {
+		return repo.cache.Set(key, value, config.expire)
+	}, err
 }
