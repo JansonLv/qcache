@@ -50,15 +50,15 @@ func (repo *cacheRepository) GetCacheWithOptions(key string, value interface{}, 
 		}
 		// 防止重复设置缓存
 		if err := setFunc(data); err != nil{
-			return nil, err
+			return data, err
 		}
 		return data, nil
 	})
-	if err != nil {
-		return err
+	if data != nil{
+		_ = copier.Copy(value, data)
 	}
+	return err
 
-	return copier.Copy(value, data)
 }
 
 func (repo *cacheRepository) GetKey(key string) *session {
