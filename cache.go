@@ -21,6 +21,7 @@ type CacheRepository interface {
 	GetOrSetDataFunc(key string, value interface{}, opts ...configOption) (func(value interface{}) error, error)
 	GetWithMarshal(key string, value interface{}, getData func() (interface{}, error), opts ...configOption) error
 	GetWithCopier(key string, value interface{}, getData func() (interface{}, error), opts ...configOption) error
+	GetCache(key string) *session
 }
 
 type cacheRepository struct {
@@ -30,6 +31,10 @@ type cacheRepository struct {
 func NewCacheRepository() CacheRepository {
 	client := freecache.NewCache(1024 * 1024)
 	return &cacheRepository{client: client}
+}
+
+func (repo *cacheRepository) getClient() *freecache.Cache {
+	return repo.client
 }
 
 func (repo *cacheRepository) SetData(key string, value interface{}) error {
@@ -92,6 +97,8 @@ func (repo *cacheRepository) GetOrSetDataWithCondition(key string, value interfa
 	}
 	return setFunc, nil
 }
+
+// options模式
 
 type cacheConfig struct {
 	isSave bool
@@ -214,6 +221,9 @@ func (repo *cacheRepository) GetWithCopier(key string, value interface{}, getDat
 	if err == nil {
 		return nil
 	}
+	if getDataFunc == nil{
+		return err
+	}
 	data, err := getDataFunc()
 	if err != nil {
 		return err
@@ -227,4 +237,67 @@ func (repo *cacheRepository) GetWithCopier(key string, value interface{}, getDat
 		return err
 	}
 	return setFunc(value)
+}
+
+// builder模式
+type session struct {
+	client CacheRepository
+	key string
+	isSave bool
+	expire time.Duration
+	getDataFunc func()(interface{}, error)
+}
+
+func newSession(client CacheRepository, key string) *session {
+	return &session{
+		client: client,
+		key:    key,
+		isSave: true,
+		expire: time.Second*3,
+		getDataFunc: nil,
+	}
+}
+
+func (s *session) SetIsSave(value bool) *session {
+	s.isSave = value
+	return s
+}
+
+
+func (s *session) SetExpire(expire time.Duration) *session {
+	s.expire = expire
+	return s
+}
+
+
+func (s *session) SetGetDataFunc(fn func()(interface{}, error)) *session {
+	s.getDataFunc = fn
+	return s
+}
+
+
+func (s *session) Find(value interface{}) error {
+	setDataFunc, err := s.client.GetOrSetDataFunc(s.key, value, WithConditionOption(s.isSave), WithExpireOption(s.expire))
+	if err == nil{
+		return nil
+	}
+	if s.getDataFunc == nil{
+		return err
+	}
+	data, err := s.getDataFunc()
+	if err != nil {
+		return err
+	}
+	if reflect.TypeOf(data) != reflect.TypeOf(value) {
+		return errors.New("getDataFunc is not expected")
+	}
+	if err = copier.Copy(value, data); err != nil{
+		return err
+	}
+	return setDataFunc(data)
+}
+
+
+func (repo *cacheRepository) GetCache(key string) *session {
+	return newSession(repo, key)
 }

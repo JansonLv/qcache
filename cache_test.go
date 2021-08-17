@@ -15,8 +15,20 @@ type UserInfo struct {
 	Name string `json:"name"`
 }
 
+type UserInfo2 struct {
+	Id   int    `json:"id"`
+	Name string `json:"name"`
+}
+
 func getInfoByIO(id int, name string) *UserInfo {
 	return &UserInfo{
+		Id:   id,
+		Name: name,
+	}
+}
+
+func getInfoByIO2(id int, name string) *UserInfo2 {
+	return &UserInfo2{
 		Id:   id,
 		Name: name,
 	}
@@ -208,7 +220,7 @@ func Test_cacheRepository_GetOrSetDataWithFunc1(t *testing.T) {
 			key,
 			info,
 			func() (interface{}, error) {
-				return getInfoByIO(id, "jansonlv"), nil
+				return getInfoByIO2(id, "jansonlv"), nil
 			},
 		)
 		assert.NoError(t, err)
@@ -294,6 +306,27 @@ func Test_cacheRepository_GetOrSetDataWithFunc1(t *testing.T) {
 	//	assert.Equal(t, err, freecache.ErrNotFound)
 	//}()
 }
+
+
+func Test_cacheRepository_Builder(t *testing.T) {
+	repo := NewCacheRepository()
+	id := 1
+	key := fmt.Sprintf(userKey, id)
+	ioInfo := getInfoByIO(id, "jansonlv")
+	value := UserInfo{}
+	err := repo.GetCache(key).Find(&value)
+	assert.Error(t, err)
+	err = repo.GetCache(key).SetGetDataFunc(func() (interface{}, error) {
+		return getInfoByIO(id, "jansonlv"), nil
+	}).Find(&value)
+	assert.NoError(t, err)
+	assert.Equal(t, &value, ioInfo)
+	value2 := UserInfo{}
+	err = repo.GetCache(key).Find(&value2)
+	assert.NoError(t, err)
+	assert.Equal(t, &value2, ioInfo)
+}
+
 
 func BenchmarkGetSet(b *testing.B) {
 	repo1 := NewCacheRepository()
