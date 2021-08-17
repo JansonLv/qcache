@@ -3,6 +3,7 @@ package store
 import (
 	"github.com/jinzhu/copier"
 	"github.com/patrickmn/go-cache"
+	"time"
 )
 
 type goCacheClient struct {
@@ -13,25 +14,16 @@ func NewGoCacheStore(client *cache.Cache) CacheRepository {
 	return &goCacheClient{client: client}
 }
 
-func (repo *goCacheClient) GetOrSetDataFunc(key string, value interface{}, opts ...ConfigOption) (func(value interface{}) error, error) {
-	config := newDefaultCacheConfig()
-	for _, opt := range opts {
-		opt(config)
-	}
-	if !config.IsSave {
-		return func(value interface{}) error { return nil }, ConditionErr
-	}
 
-	setFunc := func(value interface{}) error {
-		repo.client.Set(key, value, config.Expire)
-		return nil
-	}
+func (repo *goCacheClient) Set(key string, value interface{}, expire time.Duration) error {
+	repo.client.Set(key, value, expire)
+	return nil
+}
+
+func (repo *goCacheClient) Get(key string, value interface{}) error {
 	data, ok := repo.client.Get(key)
 	if !ok {
-		return setFunc, KeyNorFound
+		return KeyNorFound
 	}
-	if err := copier.Copy(value, data); err != nil {
-		return setFunc, err
-	}
-	return setFunc, nil
+	return copier.Copy(value, data)
 }

@@ -15,31 +15,24 @@ func NewFreeCache(client *freecache.Cache) *freeCacheClient {
 	return &freeCacheClient{client: client}
 }
 
-func (repo *freeCacheClient) GetOrSetDataFunc(key string, value interface{}, opts ...ConfigOption) (func(value interface{}) error, error) {
-	config := newDefaultCacheConfig()
-	for _, opt := range opts {
-		opt(config)
-	}
-	if !config.IsSave {
-		return func(value interface{}) error { return nil }, ConditionErr
-	}
-	keyBys := []byte(key)
-
-	setFunc := func(value interface{}) error {
-		v, err := json.Marshal(value)
-		if err != nil {
-			return err
-		}
-		// 闭包使用key和expire
-		return repo.client.Set(keyBys, v, int(config.Expire/time.Second))
-	}
-	data, err := repo.client.Get(keyBys)
+func (repo *freeCacheClient) Get(key string, value interface{}) error {
+	data, err := repo.client.Get([]byte(key))
 	if err != nil {
-		return setFunc, err
+		return err
 	}
 	err = json.Unmarshal(data, &value)
 	if err != nil {
-		return setFunc, err
+		return err
 	}
-	return setFunc, nil
+	return nil
 }
+
+func (repo *freeCacheClient) Set(key string, value interface{}, expire time.Duration) error {
+	v, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	return repo.client.Set([]byte(key), v, int(expire/time.Second))
+}
+
+

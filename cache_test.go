@@ -42,39 +42,41 @@ func Test_freecache(t *testing.T) {
 	key := fmt.Sprintf(userKey, id)
 	qCache := NewCacheRepository(store.NewFreeCache(freecache.NewCache(512 * 1024)))
 	v1 := UserInfo{}
+
 	err := qCache.GetCacheWithOptions(key, &v1, func() (interface{}, error) {
 		return getInfoByIO(id, strconv.Itoa(id)), nil
 	})
+
 	assert.NoError(t, err)
 	assert.Equal(t, &v1, getInfoByIO(id, strconv.Itoa(id)))
 	v2 := UserInfo{}
-	err = qCache.GetCache(key).Find(&v2)
+	err = qCache.GetKey(key).Find(&v2)
 	assert.NoError(t, err)
 	assert.Equal(t, &v1, &v2)
 
 	id = 3
 	key = fmt.Sprintf(userKey, id)
-	err = qCache.GetCache(key).Find(&v1)
+	err = qCache.GetKey(key).Find(&v1)
 	assert.Error(t, err)
 
-	err = qCache.GetCache(key).SetGetDataFunc(func() (interface{}, error) {
+	err = qCache.GetKey(key).SetGetDataFunc(func() (interface{}, error) {
 		return getInfoByIO(id, strconv.Itoa(id)), nil
 	}).SetIsSave(id < 4).SetExpire(time.Second * 5).Find(&v1)
 	assert.NoError(t, err)
 	assert.Equal(t, &v1, getInfoByIO(id, strconv.Itoa(id)))
 
-	err = qCache.GetCache(key).Find(&v1)
+	err = qCache.GetKey(key).Find(&v1)
 	assert.NoError(t, err)
 
 	id = 4
 	key = fmt.Sprintf(userKey, id)
-	err = qCache.GetCache(key).SetGetDataFunc(func() (interface{}, error) {
+	err = qCache.GetKey(key).SetGetDataFunc(func() (interface{}, error) {
 		return getInfoByIO(id, strconv.Itoa(id)), nil
 	}).SetIsSave(id < 4).Find(&v1)
 	assert.NoError(t, err)
 	assert.Equal(t, &v1, getInfoByIO(id, strconv.Itoa(id)))
 
-	err = qCache.GetCache(key).Find(&v1)
+	err = qCache.GetKey(key).Find(&v1)
 	assert.Error(t, err)
 
 	var int1 int
@@ -88,15 +90,14 @@ func Test_freecache(t *testing.T) {
 
 	id = 2
 	key = fmt.Sprintf(userKey, id)
-	err = qCache.GetCache(key).Find(&v1)
+	err = qCache.GetKey(key).Find(&v1)
 	assert.Error(t, err)
 	assert.NotEqual(t, &v1, getInfoByIO(id, strconv.Itoa(id)))
 	id = 3
 	key = fmt.Sprintf(userKey, id)
-	err = qCache.GetCache(key).Find(&v1)
+	err = qCache.GetKey(key).Find(&v1)
 	assert.NoError(t, err)
 	assert.Equal(t, &v1, getInfoByIO(id, strconv.Itoa(id)))
-
 }
 
 func Test_GoCache(t *testing.T) {
@@ -111,12 +112,12 @@ func Test_GoCache(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, &v1, getInfoByIO(id, strconv.Itoa(id)))
 	v2 := UserInfo{}
-	err = qCache.GetCache(key).Find(&v2)
+	err = qCache.GetKey(key).Find(&v2)
 	assert.NoError(t, err)
 	assert.Equal(t, &v1, &v2)
 	id = 3
 	key = fmt.Sprintf(userKey, id)
-	err = qCache.GetCache(key).Find(&v1)
+	err = qCache.GetKey(key).Find(&v1)
 	assert.Error(t, err)
 	var int1 int
 	key = "1"
