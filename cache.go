@@ -4,6 +4,7 @@ import (
 	"errors"
 	"github.com/JansonLv/go-cache/store"
 	"github.com/jinzhu/copier"
+	"golang.org/x/sync/singleflight"
 	"reflect"
 )
 
@@ -14,10 +15,11 @@ type QCache interface {
 
 type cacheRepository struct {
 	cache store.CacheRepository
+	sf *singleflight.Group
 }
 
 func NewCacheRepository(cache store.CacheRepository) QCache {
-	return &cacheRepository{cache: cache}
+	return &cacheRepository{cache: cache, sf: &singleflight.Group{}}
 }
 
 func (repo *cacheRepository) GetCacheWithOptions(key string, value interface{}, getDataFunc func() (interface{}, error), opts ...ConfigOption) error {
@@ -36,19 +38,27 @@ func (repo *cacheRepository) GetCacheWithOptions(key string, value interface{}, 
 	if getDataFunc == nil {
 		return err
 	}
-	data, err := getDataFunc()
+
+	data, err, _ := repo.sf.Do(key ,func() (interface{}, error) {
+		data, err := getDataFunc()
+		if err != nil {
+			return nil, err
+		}
+		// 类型判断
+		if reflect.TypeOf(data) != reflect.TypeOf(value) {
+			return nil, errors.New("get data is not expected as value")
+		}
+		// 防止重复设置缓存
+		if err := setFunc(data); err != nil{
+			return nil, err
+		}
+		return data, nil
+	})
 	if err != nil {
 		return err
 	}
-	// 类型判断
-	if reflect.TypeOf(data) != reflect.TypeOf(value) {
-		return errors.New("get data is not expected as value")
-	}
-	err = copier.Copy(value, data)
-	if err != nil {
-		return err
-	}
-	return setFunc(value)
+
+	return copier.Copy(value, data)
 }
 
 func (repo *cacheRepository) GetKey(key string) *session {

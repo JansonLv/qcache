@@ -7,6 +7,8 @@ import (
 	"github.com/patrickmn/go-cache"
 	"github.com/stretchr/testify/assert"
 	"strconv"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -42,13 +44,13 @@ func Test_freecache(t *testing.T) {
 	key := fmt.Sprintf(userKey, id)
 	qCache := NewCacheRepository(store.NewFreeCache(freecache.NewCache(512 * 1024)))
 	v1 := UserInfo{}
-
 	err := qCache.GetCacheWithOptions(key, &v1, func() (interface{}, error) {
 		return getInfoByIO(id, strconv.Itoa(id)), nil
-	})
+	}, WithExpireOption(time.Hour))
 
 	assert.NoError(t, err)
 	assert.Equal(t, &v1, getInfoByIO(id, strconv.Itoa(id)))
+
 	v2 := UserInfo{}
 	err = qCache.GetKey(key).Find(&v2)
 	assert.NoError(t, err)
@@ -127,4 +129,47 @@ func Test_GoCache(t *testing.T) {
 	})
 	assert.NoError(t, err)
 	assert.Equal(t, int1, 1)
+}
+
+// 请求归并处理
+func Test_CacheSingleFlight(t *testing.T)  {
+	id := 1
+	key := fmt.Sprintf(userKey, id)
+	qCache := NewCacheRepository(store.NewFreeCache(freecache.NewCache(512 * 1024)))
+	v := getInfoByIO(id, strconv.Itoa(id))
+	var wg sync.WaitGroup
+	var count int64
+	for i := 0; i < 100; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			v1 := UserInfo{}
+			err := qCache.GetCacheWithOptions(key, &v1, func() (interface{}, error) {
+				atomic.AddInt64(&count, 1)
+				return getInfoByIO(id, strconv.Itoa(id)), nil
+			}, WithExpireOption(time.Second))
+			assert.NoError(t, err)
+			assert.Equal(t, &v1, v)
+		}()
+	}
+	wg.Wait()
+	fmt.Println(count)
+
+	time.Sleep(time.Second)
+	for i := 0; i < 100; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			v1 := UserInfo{}
+			err := qCache.GetCacheWithOptions(key, &v1, func() (interface{}, error) {
+				atomic.AddInt64(&count, 1)
+				return getInfoByIO(id, strconv.Itoa(id)), nil
+			})
+			assert.NoError(t, err)
+			assert.Equal(t, &v1, v)
+		}()
+	}
+	wg.Wait()
+	fmt.Println(count)
+
 }

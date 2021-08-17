@@ -20,7 +20,7 @@ func (repo *freeCacheClient) Get(key string, value interface{}) error {
 	if err != nil {
 		return err
 	}
-	err = json.Unmarshal(data, &value)
+	err = json.Unmarshal(data, value)
 	if err != nil {
 		return err
 	}
