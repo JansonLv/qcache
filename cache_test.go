@@ -1,9 +1,11 @@
 package cache
 
 import (
+	"context"
 	"fmt"
 	"github.com/JansonLv/go-cache/store"
 	"github.com/coocood/freecache"
+	"github.com/go-redis/redis/v8"
 	"github.com/patrickmn/go-cache"
 	"github.com/stretchr/testify/assert"
 	"strconv"
@@ -44,9 +46,10 @@ func Test_freecache(t *testing.T) {
 	key := fmt.Sprintf(userKey, id)
 	qCache := NewCacheRepository(store.NewFreeCache(freecache.NewCache(512 * 1024)))
 	v1 := UserInfo{}
-	err := qCache.GetCacheWithOptions(key, &v1, func() (interface{}, error) {
+	ctx := context.Background()
+	err := qCache.GetCacheWithOptions(ctx, key, &v1, func() (interface{}, error) {
 		return getInfoByIO(id, strconv.Itoa(id)), nil
-	}, WithExpireOption(time.Hour))
+	}, WithKeyExpireOption(time.Hour))
 
 	assert.NoError(t, err)
 	assert.Equal(t, &v1, getInfoByIO(id, strconv.Itoa(id)))
@@ -83,7 +86,7 @@ func Test_freecache(t *testing.T) {
 
 	var int1 int
 	key = "1"
-	err = qCache.GetCacheWithOptions(key, &int1, func() (interface{}, error) {
+	err = qCache.GetCacheWithOptions(ctx, key, &int1, func() (interface{}, error) {
 		var b = 1
 		return &b, nil
 	})
@@ -104,11 +107,12 @@ func Test_freecache(t *testing.T) {
 
 func Test_GoCache(t *testing.T) {
 	id := 1
+	ctx := context.Background()
 	key := fmt.Sprintf(userKey, id)
 	client := store.NewGoCacheStore(cache.New(time.Minute*5, time.Second))
 	qCache := NewCacheRepository(client)
 	v1 := UserInfo{}
-	err := qCache.GetCacheWithOptions(key, &v1, func() (interface{}, error) {
+	err := qCache.GetCacheWithOptions(ctx, key, &v1, func() (interface{}, error) {
 		return getInfoByIO(id, strconv.Itoa(id)), nil
 	})
 	assert.NoError(t, err)
@@ -123,7 +127,7 @@ func Test_GoCache(t *testing.T) {
 	assert.Error(t, err)
 	var int1 int
 	key = "1"
-	err = qCache.GetCacheWithOptions(key, &int1, func() (interface{}, error) {
+	err = qCache.GetCacheWithOptions(ctx, key, &int1, func() (interface{}, error) {
 		var b = 1
 		return &b, nil
 	})
@@ -132,8 +136,9 @@ func Test_GoCache(t *testing.T) {
 }
 
 // 请求归并处理
-func Test_CacheSingleFlight(t *testing.T)  {
+func Test_CacheSingleFlight(t *testing.T) {
 	id := 1
+	ctx := context.Background()
 	key := fmt.Sprintf(userKey, id)
 	qCache := NewCacheRepository(store.NewFreeCache(freecache.NewCache(512 * 1024)))
 	v := getInfoByIO(id, strconv.Itoa(id))
@@ -144,10 +149,10 @@ func Test_CacheSingleFlight(t *testing.T)  {
 		go func() {
 			defer wg.Done()
 			v1 := UserInfo{}
-			err := qCache.GetCacheWithOptions(key, &v1, func() (interface{}, error) {
+			err := qCache.GetCacheWithOptions(ctx, key, &v1, func() (interface{}, error) {
 				atomic.AddInt64(&count, 1)
 				return getInfoByIO(id, strconv.Itoa(id)), nil
-			}, WithExpireOption(time.Second))
+			}, WithKeyExpireOption(time.Second))
 			assert.NoError(t, err)
 			assert.Equal(t, &v1, v)
 		}()
@@ -161,7 +166,7 @@ func Test_CacheSingleFlight(t *testing.T)  {
 		go func() {
 			defer wg.Done()
 			v1 := UserInfo{}
-			err := qCache.GetCacheWithOptions(key, &v1, func() (interface{}, error) {
+			err := qCache.GetCacheWithOptions(ctx, key, &v1, func() (interface{}, error) {
 				atomic.AddInt64(&count, 1)
 				return getInfoByIO(id, strconv.Itoa(id)), nil
 			})
@@ -171,5 +176,24 @@ func Test_CacheSingleFlight(t *testing.T)  {
 	}
 	wg.Wait()
 	fmt.Println(count)
+}
 
+func Test_GoRedis(t *testing.T) {
+	redisCli := redis.NewClient(&redis.Options{Addr: ":6379"})
+	err := redisCli.Ping(context.Background()).Err()
+	assert.NoError(t, err)
+	repo := NewCacheRepository(store.NewGoRedisCache(redisCli), WitchCacheExpireOption(5*time.Minute))
+	id := 1
+	ctx := context.Background()
+	key := fmt.Sprintf(userKey, id)
+	v1 := UserInfo{}
+	err = repo.GetCacheWithOptions(ctx, key, &v1, func() (interface{}, error) {
+		return getInfoByIO(id, strconv.Itoa(id)), nil
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, &v1, getInfoByIO(id, strconv.Itoa(id)))
+	v2 := UserInfo{}
+	err = repo.GetKey(key).Find(&v2)
+	assert.NoError(t, err)
+	assert.Equal(t, &v1, &v1)
 }
