@@ -3,7 +3,7 @@ package cache
 import (
 	"context"
 	"fmt"
-	"github.com/JansonLv/go-cache/store"
+	"github.com/JansonLv/qcache/store"
 	"github.com/coocood/freecache"
 	"github.com/go-redis/redis/v8"
 	"github.com/patrickmn/go-cache"

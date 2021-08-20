@@ -1,4 +1,4 @@
-module github.com/JansonLv/go-cache
+module github.com/JansonLv/qcache
 
 go 1.16
 

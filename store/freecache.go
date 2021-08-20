@@ -12,7 +12,7 @@ type freeCacheClient struct {
 	client *freecache.Cache
 }
 
-func NewFreeCache(client *freecache.Cache) *freeCacheClient {
+func NewFreeCache(client *freecache.Cache) CacheRepository {
 	return &freeCacheClient{client: client}
 }
 
@@ -34,4 +34,14 @@ func (repo *freeCacheClient) Set(_ context.Context, key string, value interface{
 		return err
 	}
 	return repo.client.Set([]byte(key), v, int(expire/time.Second))
+}
+
+func (repo *freeCacheClient) Del(_ context.Context, key string) error {
+	repo.client.Del([]byte(key))
+	return nil
+}
+
+func (repo *freeCacheClient) Clear(_ context.Context) error {
+	repo.client.Clear()
+	return nil
 }

@@ -35,3 +35,11 @@ func (repo *goRedisClient) Set(ctx context.Context, key string, value interface{
 	}
 	return repo.client.Set(ctx, key, v, expire).Err()
 }
+
+func (repo *goRedisClient) Del(ctx context.Context, key string) error {
+	return repo.client.Del(ctx, key).Err()
+}
+
+func (repo *goRedisClient) Clear(_ context.Context) error {
+	return nil
+}

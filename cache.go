@@ -3,7 +3,7 @@ package cache
 import (
 	"context"
 	"errors"
-	"github.com/JansonLv/go-cache/store"
+	"github.com/JansonLv/qcache/store"
 	"github.com/jinzhu/copier"
 	"golang.org/x/sync/singleflight"
 	"reflect"

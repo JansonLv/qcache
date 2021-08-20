@@ -27,3 +27,12 @@ func (repo *goCacheClient) Get(_ context.Context, key string, value interface{})
 	}
 	return copier.Copy(value, data)
 }
+
+func (repo *goCacheClient) Del(_ context.Context, key string) error {
+	repo.client.Delete(key)
+	return nil
+}
+
+func (repo *goCacheClient) Clear(_ context.Context) error {
+	return nil
+}
