@@ -1,6 +1,9 @@
 package cache
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
 // builder模式
 type session struct {
@@ -9,6 +12,7 @@ type session struct {
 	isSave      bool
 	expire      time.Duration
 	getDataFunc func() (interface{}, error)
+	ctx         context.Context
 }
 
 func newSession(client QCache, key string) *session {
@@ -18,6 +22,7 @@ func newSession(client QCache, key string) *session {
 		isSave:      true,
 		expire:      time.Second * 3,
 		getDataFunc: nil,
+		ctx:         context.Background(),
 	}
 }
 
@@ -36,6 +41,11 @@ func (s *session) SetGetDataFunc(fn func() (interface{}, error)) *session {
 	return s
 }
 
+func (s *session) WithContext(ctx context.Context) *session {
+	s.ctx = ctx
+	return s
+}
+
 func (s *session) Find(value interface{}) error {
-	return s.client.GetCacheWithOptions(s.key, value,s.getDataFunc, WithConditionOption(s.isSave), WithExpireOption(s.expire))
+	return s.client.GetCacheWithOptions(s.ctx, s.key, value, s.getDataFunc, WithConditionOption(s.isSave), WithKeyExpireOption(s.expire))
 }
